@@ -117,6 +117,20 @@
 		const str = String(time).padStart(4, '0');
 		return `${str.slice(0, 2)}:${str.slice(2, 4)}`;
 	}
+
+	// Format date for display
+	function formatDisplayDate(dateStr) {
+		if (!dateStr) return '';
+		const date = new Date(dateStr);
+		const today = new Date();
+		const tomorrow = new Date(today);
+		tomorrow.setDate(tomorrow.getDate() + 1);
+		
+		if (date.toDateString() === today.toDateString()) return 'Today';
+		if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+		
+		return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+	}
 </script>
 
 {#if isLoading}
@@ -192,7 +206,11 @@
 											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
 											</svg>
-											{formatDisplayTime(commitment.collectionTime)}
+											{#if commitment.collectionDate}
+												{formatDisplayDate(commitment.collectionDate)} at {formatDisplayTime(commitment.collectionTime)}
+											{:else}
+												{formatDisplayTime(commitment.collectionTime)}
+											{/if}
 										</div>
 										{#if commitment.message}
 											<p class="text-sm text-warm-600 mt-2 bg-warm-50 p-2 rounded-lg">{commitment.message}</p>
