@@ -1,3 +1,86 @@
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
+
+/* Import Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* Fix Google Places Autocomplete dropdown z-index */
+.pac-container {
+	z-index: 10000 !important;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background: #f5f5f4;
+}
+
+::-webkit-scrollbar-thumb {
+	background: #d6d3d1;
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: #a8a29e;
+}
+
+/* Smooth transitions - excluding scroll-related properties */
+a, button, input, textarea, select, .btn, .card {
+	transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow;
+	transition-duration: 150ms;
+	transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Base styles */
+body {
+	font-family: 'Inter', system-ui, sans-serif;
+	background-color: #fafaf9;
+	color: #292524;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Button base styles */
+.btn {
+	@apply inline-flex items-center justify-center px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200;
+}
+
+.btn-primary {
+	@apply bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800 shadow-soft hover:shadow-soft-lg;
+}
+
+.btn-secondary {
+	@apply bg-warm-100 text-warm-800 hover:bg-warm-200 active:bg-warm-300;
+}
+
+.btn-accent {
+	@apply bg-accent-500 text-white hover:bg-accent-600 active:bg-accent-700 shadow-soft hover:shadow-soft-lg;
+}
+
+.btn-danger {
+	@apply bg-red-500 text-white hover:bg-red-600 active:bg-red-700;
+}
+
+/* Card styles */
+.card {
+	@apply bg-white rounded-2xl shadow-soft p-6;
+}
+
+/* Input styles */
+.input {
+	@apply w-full px-4 py-3 rounded-xl border border-warm-200 bg-white text-warm-900 placeholder-warm-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+}
+
+/* Gradient backgrounds */
+.gradient-primary {
+	background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+}
+
+.gradient-warm {
+	background: linear-gradient(135deg, #fafaf9 0%, #f5f5f4 100%);
+}

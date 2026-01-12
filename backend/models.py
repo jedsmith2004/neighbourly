@@ -1,7 +1,12 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session
-from sqlalchemy import create_engine, select
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import create_engine
+import os
 
-engine = create_engine("sqlite:///neighboury.db")
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///neighbourly.db')
+if DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+
+engine = create_engine(DATABASE_URL)
 
 
 class Base(DeclarativeBase):
@@ -10,15 +15,13 @@ class Base(DeclarativeBase):
 
 class Account(Base):
     __tablename__ = "account"
-
-    id: Mapped[int] = mapped_column(primary_key=True, unique=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(unique=True, nullable=False)
 
 
 class Order(Base):
     __tablename__ = "order"
-
-    id: Mapped[int] = mapped_column(primary_key=True, unique=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     message: Mapped[str] = mapped_column(nullable=False)
     account_id: Mapped[int] = mapped_column(nullable=False)
     lat: Mapped[str] = mapped_column(nullable=False)
@@ -30,22 +33,19 @@ class Order(Base):
 
 class OrderItem(Base):
     __tablename__ = "order_item"
-
-    order_id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(nullable=False)
     name: Mapped[str] = mapped_column(nullable=False)
     quantity: Mapped[int] = mapped_column(nullable=False)
 
 
+class Message(Base):
+    __tablename__ = "message"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(nullable=False)
+    sender_email: Mapped[str] = mapped_column(nullable=False)
+    content: Mapped[str] = mapped_column(nullable=False)
+    timestamp: Mapped[str] = mapped_column(nullable=False)
+
+
 Base.metadata.create_all(engine)
-
-## Order
-# Fufilled
-# List of items
-# Message
-# Username
-# lat/lng
-# timeframe (start/end)
-
-## Item
-# Name
-# Quantity

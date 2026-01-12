@@ -1,23 +1,14 @@
 import json
 from os import environ as env
 from urllib.parse import quote_plus, urlencode
+from datetime import datetime
 
-from sqlalchemy.orm import Session
+from flask import Flask, redirect, session, request, url_for, jsonify
+from flask_cors import CORS, cross_origin
 from authlib.integrations.flask_client import OAuth
 from dotenv import find_dotenv, load_dotenv
-
-from flask import Flask, redirect, render_template, session, request, url_for, jsonify, Response
-from flask_cors import CORS
-
-
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, sessionmaker
-from sqlalchemy import create_engine, null, select, update
-from models import Order, OrderItem, Account, engine
-from sqlalchemy.ext.declarative import declarative_base
-
-from flask_cors import CORS, cross_origin
-
-from datetime import datetime
+from sqlalchemy.orm import Session
+from models import Order, OrderItem, Account, Message, engine
 
 ENV_FILE = find_dotenv()
 if ENV_FILE:
@@ -25,334 +16,483 @@ if ENV_FILE:
 
 app = Flask(__name__)
 app.secret_key = env.get("APP_SECRET_KEY")
-cors = CORS(app)
-app.config['CORS_HEADERS'] = 'Content-Type'
+
+FRONTEND_URL = env.get("FRONTEND_URL", "http://localhost:5173")
+
+CORS(app, supports_credentials=True, origins=[
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://neighbourly.jacksmith.me",
+    FRONTEND_URL
+])
 
 oauth = OAuth(app)
-
 oauth.register(
     "auth0",
     client_id=env.get("AUTH0_CLIENT_ID"),
     client_secret=env.get("AUTH0_CLIENT_SECRET"),
-    client_kwargs={
-        "scope": "openid profile email",
-    },
+    client_kwargs={"scope": "openid profile email"},
     server_metadata_url=f'https://{env.get("AUTH0_DOMAIN")}/.well-known/openid-configuration'
-
 )
 
+
+# Auth helpers
+def get_user_email():
+    if 'user' in session:
+        return session.get('user').get('userinfo').get('email')
+    return None
+
+
+def is_authorized():
+    if 'user' not in session:
+        return False
+    with Session(engine) as db:
+        email = get_user_email()
+        user = db.query(Account).filter_by(email=email).first()
+        if not user:
+            db.add(Account(email=email))
+            db.commit()
+    return True
+
+
+# Auth routes
 @app.route("/login")
-@cross_origin()
 def login():
-    return oauth.auth0.authorize_redirect(
-        redirect_uri=url_for("callback", _external=True)
-    )
-    # return oauth.auth0.authorize_redirect(redirect_uri='http://localhost:5173/callback')
+    return oauth.auth0.authorize_redirect(redirect_uri=url_for("callback", _external=True))
+
 
 @app.route("/callback", methods=["GET", "POST"])
-@cross_origin()
 def callback():
     token = oauth.auth0.authorize_access_token()
     session["user"] = token
-    return redirect('/')
+    return redirect(FRONTEND_URL)
+
 
 @app.route("/logout")
-@cross_origin()
 def logout():
     session.clear()
     return redirect(
-        "https://" + env.get("AUTH0_DOMAIN")
-        + "/v2/logout?"
-        + urlencode(
-            {
-                "returnTo": url_for("login", _external=True),
-                "client_id": env.get("AUTH0_CLIENT_ID"),
-            },
-            quote_via=quote_plus,
-        )
+        f"https://{env.get('AUTH0_DOMAIN')}/v2/logout?" +
+        urlencode({
+            "returnTo": url_for("login", _external=True),
+            "client_id": env.get("AUTH0_CLIENT_ID"),
+        }, quote_via=quote_plus)
     )
 
 
-# Checks if user in session - meaning logged in
-def isAuthorised():
-    if 'user' in session:
-        
-        #Finds the user that is currently logged in in the database
-        with Session(engine) as db_session:
-            userEmail = session.get('user').get('userinfo').get('email')
-            user = db_session.query(Account).filter_by(email=userEmail).first()
-
-            #If user is not in db then user is added 
-            if user == None:
-                new_user=Account(email=userEmail)
-                db_session.add(new_user)
-                db_session.commit()
-        return True
-    else:
-        return False
+@app.route("/check-auth")
+@cross_origin(supports_credentials=True)
+def check_auth():
+    if is_authorized():
+        user = session.get('user').get('userinfo')
+        return jsonify({
+            "authenticated": True,
+            "email": user.get('email'),
+            "name": user.get('name', user.get('nickname', 'User')),
+            "picture": user.get('picture', '')
+        })
+    return jsonify({"authenticated": False})
 
 
+# Account routes
 @app.route("/account")
-@cross_origin()
-def userProfile():
-    if isAuthorised():
-        # Get userEmail from the session to fetch user data from database
+@cross_origin(supports_credentials=True)
+def get_account():
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    user = session.get('user').get('userinfo')
+    return jsonify([{
+        "email": user.get('email'),
+        "nickname": user.get('nickname', user.get('name', 'User')),
+        "verified": user.get('email_verified', False),
+        "picture": user.get('picture', '')
+    }])
 
-        user_email = session.get('user').get('userinfo').get('email')
-        user_nickname = session.get('user').get('userinfo').get('nickname')
-        is_email_verified = session.get('user').get('userinfo').get('email_verified')
 
-        account_details = [{
-            "email": user_email,
-            "nickname": user_nickname,
-            "verified": is_email_verified
-        }]
-
-        return json.dumps(account_details, sort_keys=False)
-    else:
-        return redirect(url_for("login"))
-
-# Takes all orders from order table and stores in list
-# Outputted as JSON
+# Request routes
 @app.route("/requests")
-@cross_origin()
-def requests():
-    if isAuthorised():
-        user_email = session.get('user').get('userinfo').get('email')
-        with Session(engine) as db_session:
-            user_id = db_session.query(Account).filter(Account.email == user_email).first().id
-            # Query to find orders which are not being fulfilled
-            unfulfilled_orders = db_session.query(Order).filter_by(fulfilled=None).all()
-            # Query to find orders which are being fulfilled by the user logged in
-            my_orders = db_session.query(Order).filter_by(fulfilled=user_id).all()
-
-            all_items = db_session.query(OrderItem).all()
-
-            # Check if orders are retrieved
-            # If no data after retrievel will make error field
-            # MUST CHECK FOR ERROR WHEN USING THE JSON
-            if not unfulfilled_orders:
-                unfulfilled_orders_list = [
-                    {
-                        "error": "No unfulfilled orders :)"
-                    }
-                ]
-            else:
-                unfulfilled_orders_list = []
-                for order in unfulfilled_orders:
-                    order_items = []
-                    for item in all_items:
-                        if item.order_id == order.id:
-                            order_items.append({
-                                "name": item.name,
-                                "quantity": item.quantity
-                            })
-                    # Prepare the list of orders
-                    unfulfilled_orders_list.append(
-                        {
-                            "id": order.id,
-                            "message": order.message,
-                            "account_id": order.account_id,
-                            "lat": order.lat,
-                            "lng": order.lng,
-                            "fulfilled": order.fulfilled,
-                            "items": order_items,
-                            "time": order.collectionTime
-                        }
-                    )
-
-            if not my_orders:
-                my_orders_list = [
-                    {
-                        "error": "You have not chosen any orders to fulfil :("
-                    }
-                ]
-            else:
-                my_orders_list = []
-                for order in my_orders:
-                    order_items = []
-                    for item in all_items:
-                        if item.order_id == order.id:
-                            order_items.append({
-                                "name": item.name,
-                                "quantity": item.quantity
-                            })
-                    my_orders_list.append(
-                        {
-                            "id": order.id,
-                            "message": order.message,
-                            "account_id": order.account_id,
-                            "lat": order.lat,
-                            "lng": order.lng,
-                            "fulfilled": order.fulfilled,
-                            "items": order_items,
-                            "time": order.collectionTime
-                        }
-                    )
-
-            combination = [my_orders_list,unfulfilled_orders_list]
-
-
-            return json.dumps(combination, sort_keys=False)
-    else:
+@cross_origin(supports_credentials=True)
+def get_requests():
+    if not is_authorized():
         return redirect(url_for("login"))
+    
+    email = get_user_email()
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=email).first()
+        unfulfilled = db.query(Order).filter_by(fulfilled=None).all()
+        my_fulfilling = db.query(Order).filter_by(fulfilled=user.id).all()
+        all_items = db.query(OrderItem).all()
+
+        def build_order_list(orders, include_id_as="order_id"):
+            if not orders:
+                return [{"error": "No orders"}]
+            result = []
+            for order in orders:
+                items = [{"name": i.name, "quantity": i.quantity} 
+                        for i in all_items if i.order_id == order.id]
+                entry = {
+                    include_id_as: order.id,
+                    "message": order.message,
+                    "account_id": order.account_id,
+                    "lat": order.lat,
+                    "lng": order.lng,
+                    "fulfilled": order.fulfilled,
+                    "items": items,
+                    "time": order.collectionTime,
+                    "address": order.address
+                }
+                if include_id_as == "id":
+                    entry["id"] = order.id
+                result.append(entry)
+            return result
+
+        my_list = build_order_list(my_fulfilling, "id")
+        unfulfilled_list = build_order_list(unfulfilled, "order_id")
+        
+        return json.dumps([my_list, unfulfilled_list])
+
+
+@app.route("/deliver-personal-order")
+@cross_origin(supports_credentials=True)
+def get_my_orders():
+    if not is_authorized():
+        return redirect(url_for("login"))
+    
+    email = get_user_email()
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=email).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        orders = db.query(Order).filter_by(account_id=user.id).all()
+        if not orders:
+            return json.dumps([{"error": "No orders"}])
+
+        result = []
+        for order in orders:
+            items = db.query(OrderItem).filter_by(order_id=order.id).all()
+            result.append({
+                "id": order.id,
+                "message": order.message,
+                "account_id": order.account_id,
+                "lat": order.lat,
+                "lng": order.lng,
+                "address": order.address,
+                "collectionTime": order.collectionTime,
+                "items": [{"name": i.name, "quantity": i.quantity} for i in items],
+                "fulfilled": order.fulfilled,
+            })
+        return json.dumps(result)
+
+
+@app.route("/check-order")
+@cross_origin(supports_credentials=True)
+def check_order():
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    email = get_user_email()
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=email).first()
+        if not user:
+            return jsonify({"exists": False}), 404
+        has_order = db.query(Order).filter_by(account_id=user.id).first() is not None
+        return jsonify({"exists": has_order})
+
 
 @app.route("/create-request", methods=["POST"])
-@cross_origin()
-def createRequest():
-    if isAuthorised():
-        data = request.get_json()
-
-        # Extract the order data
-        message = data.get("message")
-        lat = data.get("lat")
-        lng = data.get("lng")
-        address = data.get("address")
-        collection_time = data.get("collectionTime")
-        items = data.get("items")
-
-        # Add the order to the session and commit
-        with Session(engine) as db_session:
-            pass 
-
-            userEmail = session.get('user').get('userinfo').get('email')
-            user = db_session.query(Account).filter_by(email=userEmail).first()
-
-            # Create the new Order
-            new_order = Order(
-                message=message,
-                account_id=user.id,
-                lat=lat,
-                lng=lng,
-                address=address,
-                collectionTime=collection_time,
-                fulfilled=None  # Initially, order is not fulfilled
-            )
-
-        
-            db_session.add(new_order)
-            db_session.commit()
-
-            # Add the items to the OrderItem table
-            for item in items:
-                order_item = OrderItem(
-                    name=item['name'],
-                    quantity=item['quantity']
-                )
-                db_session.add(order_item)
-                db_session.commit()
-            db_session.close()
-
-        # Redirect to the view request page with the new order's ID
-        # return redirect(url_for("viewRequest", order_id=new_order.id))
-        return "Request created successfully!"
-    else:
-        print("Unauthorized access attempt")
+@cross_origin(supports_credentials=True)
+def create_request():
+    if not is_authorized():
         return redirect(url_for("login"))
+    
+    data = request.get_json()
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=get_user_email()).first()
+        order = Order(
+            message=data.get("message"),
+            account_id=user.id,
+            lat=data.get("lat"),
+            lng=data.get("lng"),
+            address=data.get("address"),
+            collectionTime=data.get("collectionTime"),
+            fulfilled=None
+        )
+        db.add(order)
+        db.commit()
+
+        for item in data.get("items", []):
+            db.add(OrderItem(
+                order_id=order.id,
+                name=item['name'],
+                quantity=item['quantity']
+            ))
+        db.commit()
+
+    return jsonify({"success": True})
+
 
 @app.route("/fulfil-request", methods=["POST"])
-@cross_origin()
-def fulfilRequest():
-    if isAuthorised():
-        data = request.get_json()
+@cross_origin(supports_credentials=True)
+def fulfil_request():
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    order_id = request.get_json().get("order_id")
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=get_user_email()).first()
+        order = db.query(Order).filter_by(id=order_id).first()
+        order.fulfilled = user.id
+        db.commit()
+    return jsonify({"success": True, "order_id": order_id})
 
-        # Extract the order data
-        order_id = data.get("order_id")
 
-        with Session(engine) as db_session:
-            userEmail = session.get('user').get('userinfo').get('email')
+@app.route("/my-commitments")
+@cross_origin(supports_credentials=True)
+def get_commitments():
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    email = get_user_email()
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=email).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
 
-            #Finds the user who wants to furfill the order 
-            user = db_session.query(Account).filter_by(email=userEmail).first()
+        orders = db.query(Order).filter_by(fulfilled=user.id).all()
+        result = []
+        for order in orders:
+            items = db.query(OrderItem).filter_by(order_id=order.id).all()
+            requester = db.query(Account).filter_by(id=order.account_id).first()
+            result.append({
+                "id": order.id,
+                "message": order.message,
+                "lat": order.lat,
+                "lng": order.lng,
+                "address": order.address,
+                "collectionTime": order.collectionTime,
+                "items": [{"name": i.name, "quantity": i.quantity} for i in items],
+                "requester_email": requester.email if requester else "Unknown"
+            })
+        return jsonify(result)
 
-            #FINDS order to be furfilled and updates furfilled attribute of the model 
-            #Replace filterbyid field with the order to be furfilled 
-            order = db_session.query(Order).filter_by(id=order_id).first()
-            order.fulfilled = user.id
 
-            thing = order.fulfilled 
-            
-            db_session.commit()
-            db_session.close()
-        return str(thing)
-    else:
-        return redirect(url_for("login"))
+@app.route("/unfulfil-request", methods=["POST"])
+@cross_origin(supports_credentials=True)
+def unfulfil_request():
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    order_id = request.get_json().get("order_id")
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=get_user_email()).first()
+        order = db.query(Order).filter_by(id=order_id).first()
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        if order.fulfilled != user.id:
+            return jsonify({"error": "Not your commitment"}), 403
+        order.fulfilled = None
+        db.commit()
+    return jsonify({"success": True})
+
+
+@app.route("/complete-commitment", methods=["POST"])
+@cross_origin(supports_credentials=True)
+def complete_commitment():
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    order_id = request.get_json().get("order_id")
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=get_user_email()).first()
+        order = db.query(Order).filter_by(id=order_id).first()
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        if order.fulfilled != user.id:
+            return jsonify({"error": "Not your commitment"}), 403
+        
+        # Delete order and items
+        for item in db.query(OrderItem).filter_by(order_id=order.id).all():
+            db.delete(item)
+        db.delete(order)
+        db.commit()
+    return jsonify({"success": True})
+
 
 @app.route("/completed-request")
-@cross_origin()
-def completeRequest():
-
-    with Session(engine) as db_session:
-        pass
-
-    userEmail = session.get('user').get('userinfo').get('email')
-    user = db_session.query(Account).filter_by(email=userEmail).first()
-
-    #ORDER HERE IS FOR TESTING PURPOSES REPLACE WITH ORDERID OF ORDER TO BE FURFILLED
-    new_order = Order(message='pending', account_id=5, lat="aa", lng="aaa", fufullied=user.id, collectionTime=1)  
-    db_session.add(new_order)
-    db_session.commit()
-
-    order_to_delete = db_session.query(Order).filter_by(id=new_order.id).first()
-    db_session.delete(order_to_delete)
-    db_session.commit()
-    db_session.close()
-
-    return "ORDER DELETED"
-
-
-import os.path
-
-def root_dir():  # pragma: no cover
-    return os.path.abspath(os.path.dirname(__file__))
-
-
-def get_file(filename):  # pragma: no cover
-    if filename == "/":
-        filename = "index.html"
-
-    try:
-        src = os.path.join(root_dir(), filename)
-        # Figure out how flask returns static files
-        # Tried:
-        # - render_template
-        # - send_file
-        # This should not be so non-obvious
-        return open(src, "rb").read()
-    except IOError as exc:
-        pass
+@cross_origin(supports_credentials=True)
+def delete_my_request():
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
     
-    try:
-        src = os.path.join(root_dir(), f"{filename}.html")
-        # Figure out how flask returns static files
-        # Tried:
-        # - render_template
-        # - send_file
-        # This should not be so non-obvious
-        return open(src, "rb").read()
-    except IOError as exc:
-        return str(exc)
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=get_user_email()).first()
+        order = db.query(Order).filter_by(account_id=user.id).first()
+        if order:
+            for item in db.query(OrderItem).filter_by(order_id=order.id).all():
+                db.delete(item)
+            # Delete associated messages
+            for msg in db.query(Message).filter_by(order_id=order.id).all():
+                db.delete(msg)
+            db.delete(order)
+            db.commit()
+            return jsonify({"success": True})
+        return jsonify({"error": "Order not found"}), 404
 
-@app.route('/')
-def test():
-    content = get_file(os.path.join(root_dir(), "static", "index.html"))
-    return Response(content, mimetype="text/html")
 
-@app.route('/<path:path>')
-def get_resource(path):  # pragma: no cover
-    mimetypes = {
-        ".css": "text/css",
-        ".html": "text/html",
-        ".js": "application/javascript",
-        ".png": "image/png"
-    }
-    complete_path = os.path.join(root_dir(), "static", path)
-    ext = os.path.splitext(path)[1]
-    mimetype = mimetypes.get(ext, "text/html")
-    content = get_file(complete_path)
-    return Response(content, mimetype=mimetype)
+# Chat routes
+@app.route("/messages/<int:order_id>")
+@cross_origin(supports_credentials=True)
+def get_messages(order_id):
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    email = get_user_email()
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=email).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
 
+        order = db.query(Order).filter_by(id=order_id).first()
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+
+        # Only requester or helper can access
+        if order.account_id != user.id and order.fulfilled != user.id:
+            return jsonify({"error": "Access denied"}), 403
+
+        messages = db.query(Message).filter_by(order_id=order_id).order_by(Message.timestamp).all()
+        messages_list = [{
+            "id": m.id,
+            "sender_email": m.sender_email,
+            "content": m.content,
+            "timestamp": m.timestamp,
+            "is_mine": m.sender_email == email
+        } for m in messages]
+
+        # Get other user info
+        other_user = None
+        if order.account_id == user.id and order.fulfilled:
+            helper = db.query(Account).filter_by(id=order.fulfilled).first()
+            if helper:
+                other_user = {"name": helper.email.split('@')[0].title(), "email": helper.email}
+        elif order.fulfilled == user.id:
+            requester = db.query(Account).filter_by(id=order.account_id).first()
+            if requester:
+                other_user = {"name": requester.email.split('@')[0].title(), "email": requester.email}
+
+        return jsonify({
+            "messages": messages_list,
+            "other_user": other_user,
+            "order_id": order_id
+        })
+
+
+@app.route("/send-message", methods=["POST"])
+@cross_origin(supports_credentials=True)
+def send_message():
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    email = get_user_email()
+    data = request.get_json()
+    order_id = data.get("order_id")
+    content = data.get("content")
+
+    if not order_id or not content:
+        return jsonify({"error": "Missing data"}), 400
+
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=email).first()
+        order = db.query(Order).filter_by(id=order_id).first()
+        
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        if order.account_id != user.id and order.fulfilled != user.id:
+            return jsonify({"error": "Access denied"}), 403
+
+        msg = Message(
+            order_id=order_id,
+            sender_email=email,
+            content=content,
+            timestamp=datetime.now().isoformat()
+        )
+        db.add(msg)
+        db.commit()
+
+        return jsonify({
+            "success": True,
+            "message": {
+                "id": msg.id,
+                "sender_email": msg.sender_email,
+                "content": msg.content,
+                "timestamp": msg.timestamp,
+                "is_mine": True
+            }
+        })
+
+
+@app.route("/my-chats")
+@cross_origin(supports_credentials=True)
+def get_my_chats():
+    if not is_authorized():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    email = get_user_email()
+    with Session(engine) as db:
+        user = db.query(Account).filter_by(email=email).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        chats = []
+        
+        # Requests I made with a helper assigned
+        my_requests = db.query(Order).filter(
+            Order.account_id == user.id,
+            Order.fulfilled != None
+        ).all()
+        
+        for order in my_requests:
+            helper = db.query(Account).filter_by(id=order.fulfilled).first()
+            last_msg = db.query(Message).filter_by(order_id=order.id).order_by(Message.timestamp.desc()).first()
+            helper_name = helper.email.split('@')[0].title() if helper else "Unknown"
+            
+            chats.append({
+                "order_id": order.id,
+                "role": "requester",
+                "other_user": {"name": helper_name, "email": helper.email if helper else ""},
+                "address": order.address,
+                "last_message": {
+                    "content": last_msg.content,
+                    "timestamp": last_msg.timestamp,
+                    "is_mine": last_msg.sender_email == email
+                } if last_msg else None
+            })
+
+        # Orders I'm helping with
+        my_commitments = db.query(Order).filter_by(fulfilled=user.id).all()
+        
+        for order in my_commitments:
+            requester = db.query(Account).filter_by(id=order.account_id).first()
+            last_msg = db.query(Message).filter_by(order_id=order.id).order_by(Message.timestamp.desc()).first()
+            requester_name = requester.email.split('@')[0].title() if requester else "Unknown"
+            
+            chats.append({
+                "order_id": order.id,
+                "role": "helper",
+                "other_user": {"name": requester_name, "email": requester.email if requester else ""},
+                "address": order.address,
+                "last_message": {
+                    "content": last_msg.content,
+                    "timestamp": last_msg.timestamp,
+                    "is_mine": last_msg.sender_email == email
+                } if last_msg else None
+            })
+
+        return jsonify({"chats": chats})
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=env.get("PORT", 3000))
+    port = int(env.get("PORT", 3000))
+    app.run(host="0.0.0.0", port=port, debug=env.get("FLASK_DEBUG", "false").lower() == "true")
