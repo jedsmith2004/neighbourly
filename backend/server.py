@@ -5,6 +5,7 @@ from datetime import datetime
 
 from flask import Flask, redirect, session, request, url_for, jsonify
 from flask_cors import CORS, cross_origin
+from flask_session import Session as FlaskSession
 from authlib.integrations.flask_client import OAuth
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy.orm import Session
@@ -20,6 +21,14 @@ app.secret_key = env.get("APP_SECRET_KEY")
 # Trust proxy headers (Fly.io uses a reverse proxy)
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# Use database sessions (shared across all Fly.io machines)
+app.config['SESSION_TYPE'] = 'sqlalchemy'
+app.config['SESSION_SQLALCHEMY'] = None  # Will use SQLALCHEMY_DATABASE_URI
+app.config['SQLALCHEMY_DATABASE_URI'] = env.get("DATABASE_URL", "sqlite:///database.db").replace("postgres://", "postgresql://")
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_SECURE'] = True  # Required for SameSite=None
+FlaskSession(app)
 
 FRONTEND_URL = env.get("FRONTEND_URL", "http://localhost:5173")
 
@@ -43,7 +52,7 @@ oauth.register(
 # Auth helpers
 def get_user_email():
     if 'user' in session:
-        return session.get('user').get('userinfo').get('email')
+        return session.get('user').get('email')
     return None
 
 
@@ -72,7 +81,8 @@ def login():
 @app.route("/callback", methods=["GET", "POST"])
 def callback():
     token = oauth.auth0.authorize_access_token()
-    session["user"] = token
+    # Store only userinfo to keep session cookie small
+    session["user"] = token.get('userinfo')
     return redirect(FRONTEND_URL)
 
 
@@ -82,7 +92,7 @@ def logout():
     return redirect(
         f"https://{env.get('AUTH0_DOMAIN')}/v2/logout?" +
         urlencode({
-            "returnTo": url_for("login", _external=True),
+            "returnTo": FRONTEND_URL,
             "client_id": env.get("AUTH0_CLIENT_ID"),
         }, quote_via=quote_plus)
     )
@@ -92,7 +102,7 @@ def logout():
 @cross_origin(supports_credentials=True)
 def check_auth():
     if is_authorized():
-        user = session.get('user').get('userinfo')
+        user = session.get('user')
         return jsonify({
             "authenticated": True,
             "email": user.get('email'),
