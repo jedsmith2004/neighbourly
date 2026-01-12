@@ -55,10 +55,14 @@ def is_authorized():
     return True
 
 
+BACKEND_URL = env.get("BACKEND_URL", "http://localhost:3000")
+
+
 # Auth routes
 @app.route("/login")
 def login():
-    return oauth.auth0.authorize_redirect(redirect_uri=url_for("callback", _external=True))
+    callback_url = f"{BACKEND_URL}/callback"
+    return oauth.auth0.authorize_redirect(redirect_uri=callback_url)
 
 
 @app.route("/callback", methods=["GET", "POST"])
