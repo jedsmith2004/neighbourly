@@ -13,6 +13,25 @@
 	let mapElement;
 	let map;
 	let markers = [];
+	let searchCircle = null;
+	
+	// Search center (user's location or default)
+	let searchCenter = $state({ lat: 53.3811, lng: -1.4701 }); // Default to Sheffield
+	let searchRadius = $state(10); // Default 10km radius
+	
+	// Computed: requests with distance, filtered and sorted
+	let requestsWithDistance = $derived(
+		requests.map(r => ({
+			...r,
+			distance: calculateDistance(searchCenter.lat, searchCenter.lng, r.lat, r.lng)
+		}))
+	);
+	
+	let filteredRequests = $derived(
+		requestsWithDistance
+			.filter(r => r.distance <= searchRadius)
+			.sort((a, b) => a.distance - b.distance)
+	);
 
 	const loader = new Loader({
 		apiKey: PUBLIC_GOOGLE_MAPS_API_KEY,
@@ -44,6 +63,27 @@
 			// Pre-load Google Maps API
 			await loader.load();
 			mapReady = true;
+			
+			// Try to get user's location
+			if (navigator.geolocation) {
+				navigator.geolocation.getCurrentPosition(
+					(position) => {
+						searchCenter = {
+							lat: position.coords.latitude,
+							lng: position.coords.longitude
+						};
+						if (map) {
+							map.setCenter(searchCenter);
+							updateMarkers();
+							updateSearchCircle();
+						}
+					},
+					() => {
+						// Geolocation failed, use default
+						console.log('Geolocation not available, using default location');
+					}
+				);
+			}
 
 		} catch (error) {
 			console.error('Error:', error);
@@ -54,6 +94,27 @@
 			initMap();
 		}
 	});
+	
+	// Calculate distance between two points in km (Haversine formula)
+	function calculateDistance(lat1, lng1, lat2, lng2) {
+		const R = 6371; // Earth's radius in km
+		const dLat = (lat2 - lat1) * Math.PI / 180;
+		const dLng = (lng2 - lng1) * Math.PI / 180;
+		const a = 
+			Math.sin(dLat/2) * Math.sin(dLat/2) +
+			Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+			Math.sin(dLng/2) * Math.sin(dLng/2);
+		const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+		return R * c;
+	}
+	
+	// Format distance for display
+	function formatDistance(km) {
+		if (km < 1) {
+			return `${Math.round(km * 1000)}m`;
+		}
+		return `${km.toFixed(1)}km`;
+	}
 
 	function initMap() {
 		if (!mapElement || !mapReady) {
@@ -62,15 +123,53 @@
 		}
 		
 		map = new google.maps.Map(mapElement, {
-			center: { lat: 53.3811, lng: -1.4701 }, // Sheffield
+			center: searchCenter,
 			zoom: 12,
 			disableDefaultUI: true,
 			gestureHandling: 'greedy',
 			styles: style
 		});
+		
+		// Add click listener to change search center
+		map.addListener('click', (e) => {
+			searchCenter = {
+				lat: e.latLng.lat(),
+				lng: e.latLng.lng()
+			};
+			updateMarkers();
+			updateSearchCircle();
+		});
 
 		// Add markers for each request
 		updateMarkers();
+		updateSearchCircle();
+	}
+	
+	function updateSearchCircle() {
+		if (!map) return;
+		
+		// Remove existing circle
+		if (searchCircle) {
+			searchCircle.setMap(null);
+		}
+		
+		// Create new circle
+		searchCircle = new google.maps.Circle({
+			strokeColor: '#10B981',
+			strokeOpacity: 0.8,
+			strokeWeight: 2,
+			fillColor: '#10B981',
+			fillOpacity: 0.1,
+			map: map,
+			center: searchCenter,
+			radius: searchRadius * 1000 // Convert km to meters
+		});
+	}
+	
+	function handleRadiusChange(e) {
+		searchRadius = parseFloat(e.target.value);
+		updateMarkers();
+		updateSearchCircle();
 	}
 
 	async function loadRequests() {
@@ -103,16 +202,20 @@
 		markers.forEach(marker => marker.setMap(null));
 		markers = [];
 
-		// Add new markers
-		requests.forEach((request) => {
+		// Add new markers with color based on distance
+		requestsWithDistance.forEach((request) => {
 			if (request.lat && request.lng && !isNaN(request.lat) && !isNaN(request.lng)) {
+				const isInRange = request.distance <= searchRadius;
 				const marker = new google.maps.Marker({
 					position: { lat: request.lat, lng: request.lng },
 					map: map,
 					title: request.address,
 					icon: {
-						url: 'http://maps.google.com/mapfiles/ms/icons/green-dot.png'
-					}
+						url: isInRange 
+							? 'http://maps.google.com/mapfiles/ms/icons/green-dot.png'
+							: 'http://maps.google.com/mapfiles/ms/icons/grey-dot.png'
+					},
+					zIndex: isInRange ? 10 : 1 // In-range markers on top
 				});
 
 				marker.addListener('click', () => {
@@ -124,17 +227,9 @@
 			}
 		});
 
-		// Fit bounds to show all markers
-		if (markers.length > 0) {
-			const bounds = new google.maps.LatLngBounds();
-			markers.forEach(marker => bounds.extend(marker.getPosition()));
-			map.fitBounds(bounds);
-			
-			// Don't zoom in too much
-			const listener = google.maps.event.addListener(map, 'idle', () => {
-				if (map.getZoom() > 15) map.setZoom(15);
-				google.maps.event.removeListener(listener);
-			});
+		// Fit bounds to show search area
+		if (map && searchCircle) {
+			// Optionally fit to circle bounds
 		}
 	}
 
@@ -210,9 +305,32 @@
 		<!-- Map Section -->
 		<div class="h-[300px] lg:h-full lg:w-2/3 relative">
 			<div bind:this={mapElement} class="h-full w-full"></div>
-			<!-- Map overlay badge -->
-			<div class="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-full px-4 py-2 shadow-soft">
-				<span class="text-sm font-medium text-warm-700">{requests.length} requests nearby</span>
+			<!-- Map overlay controls -->
+			<div class="absolute top-4 left-4 right-4 lg:right-auto flex flex-col gap-2">
+				<div class="bg-white/95 backdrop-blur-sm rounded-xl px-4 py-3 shadow-soft">
+					<div class="flex items-center justify-between gap-4 mb-2">
+						<span class="text-sm font-medium text-warm-700">Search Radius</span>
+						<span class="text-sm font-bold text-primary-600">{searchRadius}km</span>
+					</div>
+					<input 
+						type="range" 
+						min="1" 
+						max="50" 
+						value={searchRadius}
+						oninput={handleRadiusChange}
+						class="w-full h-2 bg-warm-200 rounded-lg appearance-none cursor-pointer accent-primary-500"
+					/>
+					<div class="flex justify-between text-xs text-warm-400 mt-1">
+						<span>1km</span>
+						<span>50km</span>
+					</div>
+				</div>
+				<div class="bg-white/95 backdrop-blur-sm rounded-full px-4 py-2 shadow-soft">
+					<span class="text-sm font-medium text-warm-700">
+						<span class="text-primary-600 font-bold">{filteredRequests.length}</span> requests within {searchRadius}km
+					</span>
+				</div>
+				<p class="text-xs text-warm-500 bg-white/80 rounded-lg px-3 py-1.5">💡 Click map to change search center</p>
 			</div>
 		</div>
 
@@ -222,25 +340,30 @@
 				<h2 class="text-2xl font-bold text-warm-900 flex items-center gap-2">
 					<span>🤝</span> Neighbours Need Help
 				</h2>
-				<p class="text-warm-500 text-sm mt-1">Click a request to see details and volunteer</p>
+				<p class="text-warm-500 text-sm mt-1">Showing requests within {searchRadius}km, sorted by distance</p>
 			</div>
 			
-			{#if requests.length === 0}
+			{#if filteredRequests.length === 0}
 				<div class="text-center py-12 card">
-					<div class="text-4xl mb-3">🎉</div>
-					<p class="text-warm-600 font-medium">No requests right now</p>
-					<p class="text-sm text-warm-400 mt-2">Everyone's all good! Check back later.</p>
+					<div class="text-4xl mb-3">🔍</div>
+					<p class="text-warm-600 font-medium">No requests in this area</p>
+					<p class="text-sm text-warm-400 mt-2">Try increasing your search radius or clicking a different area on the map.</p>
 				</div>
 			{:else}
 				<div class="space-y-3">
-					{#each requests as request}
+					{#each filteredRequests as request}
 						<button
 							onclick={() => selectRequest(request)}
 							class="w-full text-left card hover:shadow-soft-lg transition-all {selectedRequest?.id === request.id ? 'ring-2 ring-primary-500 bg-primary-50' : ''}"
 						>
 							<div class="flex justify-between items-start gap-3">
 								<div class="flex-1 min-w-0">
-									<p class="font-semibold text-warm-900 truncate">{request.address}</p>
+									<div class="flex items-center gap-2">
+										<p class="font-semibold text-warm-900 truncate">{request.address}</p>
+										<span class="flex-shrink-0 rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700">
+											{formatDistance(request.distance)}
+										</span>
+									</div>
 									<div class="flex items-center gap-2 mt-1 text-sm text-warm-500">
 										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -270,7 +393,14 @@
 			<div class="w-full max-w-lg card shadow-xl animate-in fade-in zoom-in duration-200 my-auto">
 				<div class="flex justify-between items-start mb-4">
 					<div>
-						<h3 class="text-xl font-bold text-warm-900">Request Details</h3>
+						<div class="flex items-center gap-2">
+							<h3 class="text-xl font-bold text-warm-900">Request Details</h3>
+							{#if selectedRequest.distance !== undefined}
+								<span class="rounded-full bg-primary-100 px-2.5 py-1 text-xs font-semibold text-primary-700">
+									{formatDistance(selectedRequest.distance)} away
+								</span>
+							{/if}
+						</div>
 						<p class="text-sm text-warm-500">Help your neighbour out!</p>
 					</div>
 					<button 
