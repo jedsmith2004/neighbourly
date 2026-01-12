@@ -30,9 +30,11 @@
 		}))
 	);
 	
+	let isUnlimited = $derived(searchRadius >= 50);
+	
 	let filteredRequests = $derived(
 		requestsWithDistance
-			.filter(r => r.distance <= searchRadius)
+			.filter(r => isUnlimited || r.distance <= searchRadius)
 			.sort((a, b) => a.distance - b.distance)
 	);
 
@@ -135,16 +137,6 @@
 			styles: style
 		});
 		
-		// Add click listener to change search center
-		map.addListener('click', (e) => {
-			searchCenter = {
-				lat: e.latLng.lat(),
-				lng: e.latLng.lng()
-			};
-			updateMarkers();
-			updateSearchCircle();
-		});
-
 		// Add markers for each request
 		updateMarkers();
 		updateSearchCircle();
@@ -229,7 +221,11 @@
 		// Remove existing circle
 		if (searchCircle) {
 			searchCircle.setMap(null);
+			searchCircle = null;
 		}
+		
+		// Don't show circle when unlimited
+		if (searchRadius >= 50) return;
 		
 		// Create new circle
 		searchCircle = new google.maps.Circle({
@@ -283,7 +279,7 @@
 		// Add new markers with color based on distance
 		requestsWithDistance.forEach((request) => {
 			if (request.lat && request.lng && !isNaN(request.lat) && !isNaN(request.lng)) {
-				const isInRange = request.distance <= searchRadius;
+				const isInRange = searchRadius >= 50 || request.distance <= searchRadius;
 				const marker = new google.maps.Marker({
 					position: { lat: request.lat, lng: request.lng },
 					map: map,
@@ -388,7 +384,7 @@
 				<div class="bg-white/95 backdrop-blur-sm rounded-xl px-4 py-3 shadow-soft">
 					<div class="flex items-center justify-between gap-4 mb-2">
 						<span class="text-sm font-medium text-warm-700">Search Radius</span>
-						<span class="text-sm font-bold text-primary-600">{searchRadius}km</span>
+						<span class="text-sm font-bold text-primary-600">{isUnlimited ? 'Unlimited' : `${searchRadius}km`}</span>
 					</div>
 					<input 
 						type="range" 
@@ -400,15 +396,14 @@
 					/>
 					<div class="flex justify-between text-xs text-warm-400 mt-1">
 						<span>1km</span>
-						<span>50km</span>
+						<span>∞</span>
 					</div>
 				</div>
 				<div class="bg-white/95 backdrop-blur-sm rounded-full px-4 py-2 shadow-soft">
 					<span class="text-sm font-medium text-warm-700">
-						<span class="text-primary-600 font-bold">{filteredRequests.length}</span> requests within {searchRadius}km
+						<span class="text-primary-600 font-bold">{filteredRequests.length}</span> {isUnlimited ? 'total requests' : `requests within ${searchRadius}km`}
 					</span>
 				</div>
-				<p class="text-xs text-warm-500 bg-white/80 rounded-lg px-3 py-1.5">💡 Click map to change search center</p>
 			</div>
 			
 			<!-- Map tools - Right side -->
@@ -497,14 +492,14 @@
 				<h2 class="text-2xl font-bold text-warm-900 flex items-center gap-2">
 					<span>🤝</span> Neighbours Need Help
 				</h2>
-				<p class="text-warm-500 text-sm mt-1">Showing requests within {searchRadius}km, sorted by distance</p>
+				<p class="text-warm-500 text-sm mt-1">{isUnlimited ? 'Showing all requests' : `Showing requests within ${searchRadius}km`}, sorted by distance</p>
 			</div>
 			
 			{#if filteredRequests.length === 0}
 				<div class="text-center py-12 card">
 					<div class="text-4xl mb-3">🔍</div>
 					<p class="text-warm-600 font-medium">No requests in this area</p>
-					<p class="text-sm text-warm-400 mt-2">Try increasing your search radius or clicking a different area on the map.</p>
+					<p class="text-sm text-warm-400 mt-2">Try increasing your search radius.</p>
 				</div>
 			{:else}
 				<div class="space-y-3">
