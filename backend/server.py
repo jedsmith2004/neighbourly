@@ -92,7 +92,7 @@ def logout():
     return redirect(
         f"https://{env.get('AUTH0_DOMAIN')}/v2/logout?" +
         urlencode({
-            "returnTo": FRONTEND_URL,
+            "returnTo": f"{FRONTEND_URL}/makerequest",
             "client_id": env.get("AUTH0_CLIENT_ID"),
         }, quote_via=quote_plus)
     )
