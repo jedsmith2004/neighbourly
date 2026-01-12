@@ -14,6 +14,7 @@
 		id: null,
 		username: '',
 		collectionTime: '',
+		collectionDate: '',
 		items: [],
 		lat: 53.38182330444414,
 		lng: -1.4816028478377632,
@@ -70,6 +71,7 @@
 					id: orders[0].id,
 					username: orders[0].username || '',
 					collectionTime: orders[0].collectionTime,
+					collectionDate: orders[0].collectionDate,
 					items: orders[0].items || [],
 					lat: parseFloat(orders[0].lat),
 					lng: parseFloat(orders[0].lng),
@@ -149,6 +151,19 @@
 		const str = String(time).padStart(4, '0');
 		return `${str.slice(0, 2)}:${str.slice(2, 4)}`;
 	}
+
+	function formatDisplayDate(dateStr) {
+		if (!dateStr) return '';
+		const date = new Date(dateStr);
+		const today = new Date();
+		const tomorrow = new Date(today);
+		tomorrow.setDate(tomorrow.getDate() + 1);
+		
+		if (date.toDateString() === today.toDateString()) return 'Today';
+		if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+		
+		return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+	}
 </script>
 
 {#if isLoading}
@@ -218,8 +233,14 @@
 							</svg>
 						</div>
 						<div>
-							<p class="text-xs font-medium text-warm-400 uppercase tracking-wide">Collection Time</p>
-							<p class="text-warm-900 font-medium">{formatDisplayTime(order.collectionTime)}</p>
+							<p class="text-xs font-medium text-warm-400 uppercase tracking-wide">When</p>
+							<p class="text-warm-900 font-medium">
+								{#if order.collectionDate}
+									{formatDisplayDate(order.collectionDate)} at {formatDisplayTime(order.collectionTime)}
+								{:else}
+									{formatDisplayTime(order.collectionTime)}
+								{/if}
+							</p>
 						</div>
 					</div>
 

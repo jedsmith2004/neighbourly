@@ -28,6 +28,7 @@ class Order(Base):
     lng: Mapped[str] = mapped_column(nullable=False)
     address: Mapped[str] = mapped_column(nullable=False)
     collectionTime: Mapped[str] = mapped_column(nullable=False)
+    collectionDate: Mapped[str] = mapped_column(nullable=True)  # Format: YYYY-MM-DD
     fulfilled: Mapped[int] = mapped_column(nullable=True)
 
 

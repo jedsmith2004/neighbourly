@@ -136,9 +136,13 @@ def get_requests():
         return redirect(url_for("login"))
     
     email = get_user_email()
+    today = datetime.now().strftime("%Y-%m-%d")
+    
     with Session(engine) as db:
         user = db.query(Account).filter_by(email=email).first()
-        unfulfilled = db.query(Order).filter_by(fulfilled=None).all()
+        # Get unfulfilled orders that haven't expired (date >= today or no date set)
+        all_unfulfilled = db.query(Order).filter_by(fulfilled=None).all()
+        unfulfilled = [o for o in all_unfulfilled if not o.collectionDate or o.collectionDate >= today]
         my_fulfilling = db.query(Order).filter_by(fulfilled=user.id).all()
         all_items = db.query(OrderItem).all()
 
@@ -158,6 +162,7 @@ def get_requests():
                     "fulfilled": order.fulfilled,
                     "items": items,
                     "time": order.collectionTime,
+                    "date": order.collectionDate,
                     "address": order.address
                 }
                 if include_id_as == "id":
@@ -198,6 +203,7 @@ def get_my_orders():
                 "lng": order.lng,
                 "address": order.address,
                 "collectionTime": order.collectionTime,
+                "collectionDate": order.collectionDate,
                 "items": [{"name": i.name, "quantity": i.quantity} for i in items],
                 "fulfilled": order.fulfilled,
             })
@@ -235,6 +241,7 @@ def create_request():
             lng=data.get("lng"),
             address=data.get("address"),
             collectionTime=data.get("collectionTime"),
+            collectionDate=data.get("collectionDate"),
             fulfilled=None
         )
         db.add(order)
@@ -290,6 +297,7 @@ def get_commitments():
                 "lng": order.lng,
                 "address": order.address,
                 "collectionTime": order.collectionTime,
+                "collectionDate": order.collectionDate,
                 "items": [{"name": i.name, "quantity": i.quantity} for i in items],
                 "requester_email": requester.email if requester else "Unknown"
             })

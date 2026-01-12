@@ -147,9 +147,13 @@
 	}
 
 	let time = $state('');
+	let date = $state('');
 	let items = $state([{ name: '', quantity: 1 }]);
 	let message = $state('');
 	let address = $state('');
+
+	// Get today's date in YYYY-MM-DD format for min attribute
+	const today = new Date().toISOString().split('T')[0];
 
 	function addItem() {
 		items = [...items, { name: '', quantity: 1 }];
@@ -168,6 +172,7 @@
 			lng: pinLatLng.lng,
 			address: searchInputElement.value,
 			collectionTime: formatTime(time),
+			collectionDate: date,
 			items: items
 		};
 
@@ -272,14 +277,30 @@
 					<h2 class="text-lg font-semibold text-warm-900 mb-4 flex items-center gap-2">
 						<span class="text-xl">🕐</span> When do you need this?
 					</h2>
-					<input
-						type="time"
-						id="time"
-						bind:value={time}
-						required
-						class="input w-full"
-					/>
-					<p class="text-sm text-warm-400 mt-2">Set a collection time for your items</p>
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+						<div>
+							<label for="date" class="block text-sm font-medium text-warm-600 mb-2">Date</label>
+							<input
+								type="date"
+								id="date"
+								bind:value={date}
+								min={today}
+								required
+								class="input w-full"
+							/>
+						</div>
+						<div>
+							<label for="time" class="block text-sm font-medium text-warm-600 mb-2">Time</label>
+							<input
+								type="time"
+								id="time"
+								bind:value={time}
+								required
+								class="input w-full"
+							/>
+						</div>
+					</div>
+					<p class="text-sm text-warm-400 mt-2">Set when you need your items collected</p>
 				</div>
 
 				<!-- Item List -->

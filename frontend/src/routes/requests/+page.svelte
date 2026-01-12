@@ -91,6 +91,7 @@
 				lng: parseFloat(order.lng),
 				address: order.address,
 				collectionTime: order.time,
+				collectionDate: order.date,
 				items: order.items,
 				fulfilled: order.fulfilled
 			}));
@@ -181,6 +182,20 @@
 		const str = String(time).padStart(4, '0');
 		return `${str.slice(0, 2)}:${str.slice(2, 4)}`;
 	}
+
+	// Format date from "YYYY-MM-DD" to a readable format
+	function formatDisplayDate(dateStr) {
+		if (!dateStr) return '';
+		const date = new Date(dateStr);
+		const today = new Date();
+		const tomorrow = new Date(today);
+		tomorrow.setDate(tomorrow.getDate() + 1);
+		
+		if (date.toDateString() === today.toDateString()) return 'Today';
+		if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+		
+		return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+	}
 </script>
 
 {#if isLoading}
@@ -230,7 +245,11 @@
 										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
 										</svg>
-										{formatDisplayTime(request.collectionTime)}
+										{#if request.collectionDate}
+											{formatDisplayDate(request.collectionDate)} at {formatDisplayTime(request.collectionTime)}
+										{:else}
+											{formatDisplayTime(request.collectionTime)}
+										{/if}
 									</div>
 									<p class="text-sm text-warm-600 mt-2 line-clamp-2">{request.message || 'No additional message'}</p>
 								</div>
@@ -286,8 +305,14 @@
 							</svg>
 						</div>
 						<div>
-							<p class="text-xs font-medium text-warm-400 uppercase tracking-wide">Collection Time</p>
-							<p class="text-warm-900 font-medium">{formatDisplayTime(selectedRequest.collectionTime)}</p>
+							<p class="text-xs font-medium text-warm-400 uppercase tracking-wide">When</p>
+							<p class="text-warm-900 font-medium">
+								{#if selectedRequest.collectionDate}
+									{formatDisplayDate(selectedRequest.collectionDate)} at {formatDisplayTime(selectedRequest.collectionTime)}
+								{:else}
+									{formatDisplayTime(selectedRequest.collectionTime)}
+								{/if}
+							</p>
 						</div>
 					</div>
 
