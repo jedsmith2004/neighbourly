@@ -14,6 +14,9 @@
 	let map;
 	let markers = [];
 	let searchCircle = null;
+	let userLocationMarker = null;
+	let userLocation = $state(null); // User's actual GPS location
+	let locationLoading = $state(false);
 	
 	// Search center (user's location or default)
 	let searchCenter = $state({ lat: 53.3811, lng: -1.4701 }); // Default to Sheffield
@@ -68,14 +71,16 @@
 			if (navigator.geolocation) {
 				navigator.geolocation.getCurrentPosition(
 					(position) => {
-						searchCenter = {
+						userLocation = {
 							lat: position.coords.latitude,
 							lng: position.coords.longitude
 						};
+						searchCenter = { ...userLocation };
 						if (map) {
 							map.setCenter(searchCenter);
 							updateMarkers();
 							updateSearchCircle();
+							updateUserLocationMarker();
 						}
 					},
 					() => {
@@ -143,6 +148,79 @@
 		// Add markers for each request
 		updateMarkers();
 		updateSearchCircle();
+		updateUserLocationMarker();
+	}
+	
+	function updateUserLocationMarker() {
+		if (!map) return;
+		
+		// Remove existing user location marker
+		if (userLocationMarker) {
+			userLocationMarker.setMap(null);
+		}
+		
+		// Only show marker if we have user's location
+		if (userLocation) {
+			userLocationMarker = new google.maps.Marker({
+				position: userLocation,
+				map: map,
+				title: 'Your location',
+				icon: {
+					path: google.maps.SymbolPath.CIRCLE,
+					scale: 10,
+					fillColor: '#3B82F6',
+					fillOpacity: 1,
+					strokeColor: '#ffffff',
+					strokeWeight: 3,
+				},
+				zIndex: 100
+			});
+		}
+	}
+	
+	function goToCurrentLocation() {
+		if (!navigator.geolocation) {
+			alert('Geolocation is not supported by your browser');
+			return;
+		}
+		
+		locationLoading = true;
+		navigator.geolocation.getCurrentPosition(
+			(position) => {
+				userLocation = {
+					lat: position.coords.latitude,
+					lng: position.coords.longitude
+				};
+				searchCenter = { ...userLocation };
+				
+				if (map) {
+					// Smooth pan to location
+					map.panTo(searchCenter);
+					map.setZoom(13);
+					updateMarkers();
+					updateSearchCircle();
+					updateUserLocationMarker();
+				}
+				locationLoading = false;
+			},
+			(error) => {
+				locationLoading = false;
+				alert('Unable to get your location. Please check your browser permissions.');
+			},
+			{ enableHighAccuracy: true }
+		);
+	}
+	
+	function zoomIn() {
+		if (map) {
+			map.setZoom(map.getZoom() + 1);
+		}
+	}
+	
+	function zoomOut() {
+		if (map) {
+			map.setZoom(map.getZoom() - 1);
+		}
 	}
 	
 	function updateSearchCircle() {
@@ -305,7 +383,7 @@
 		<!-- Map Section -->
 		<div class="h-[300px] lg:h-full lg:w-2/3 relative">
 			<div bind:this={mapElement} class="h-full w-full"></div>
-			<!-- Map overlay controls -->
+			<!-- Map overlay controls - Left side -->
 			<div class="absolute top-4 left-4 right-4 lg:right-auto flex flex-col gap-2">
 				<div class="bg-white/95 backdrop-blur-sm rounded-xl px-4 py-3 shadow-soft">
 					<div class="flex items-center justify-between gap-4 mb-2">
@@ -331,6 +409,85 @@
 					</span>
 				</div>
 				<p class="text-xs text-warm-500 bg-white/80 rounded-lg px-3 py-1.5">💡 Click map to change search center</p>
+			</div>
+			
+			<!-- Map tools - Right side -->
+			<div class="absolute top-4 right-4 hidden lg:flex flex-col gap-2">
+				<!-- Go to current location -->
+				<button
+					onclick={goToCurrentLocation}
+					disabled={locationLoading}
+					class="bg-white/95 backdrop-blur-sm rounded-xl p-3 shadow-soft hover:bg-white transition-colors disabled:opacity-50"
+					title="Go to my location"
+				>
+					{#if locationLoading}
+						<div class="w-5 h-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></div>
+					{:else}
+						<svg class="w-5 h-5 text-warm-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+						</svg>
+					{/if}
+				</button>
+				
+				<!-- Zoom controls -->
+				<div class="bg-white/95 backdrop-blur-sm rounded-xl shadow-soft overflow-hidden">
+					<button
+						onclick={zoomIn}
+						class="p-3 hover:bg-warm-100 transition-colors block w-full border-b border-warm-200"
+						title="Zoom in"
+					>
+						<svg class="w-5 h-5 text-warm-700 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+						</svg>
+					</button>
+					<button
+						onclick={zoomOut}
+						class="p-3 hover:bg-warm-100 transition-colors block w-full"
+						title="Zoom out"
+					>
+						<svg class="w-5 h-5 text-warm-700 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+						</svg>
+					</button>
+				</div>
+			</div>
+			
+			<!-- Mobile map tools - Bottom -->
+			<div class="absolute bottom-4 right-4 flex lg:hidden gap-2">
+				<button
+					onclick={goToCurrentLocation}
+					disabled={locationLoading}
+					class="bg-white/95 backdrop-blur-sm rounded-xl p-3 shadow-soft hover:bg-white transition-colors disabled:opacity-50"
+					title="Go to my location"
+				>
+					{#if locationLoading}
+						<div class="w-5 h-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></div>
+					{:else}
+						<svg class="w-5 h-5 text-warm-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+						</svg>
+					{/if}
+				</button>
+				<button
+					onclick={zoomIn}
+					class="bg-white/95 backdrop-blur-sm rounded-xl p-3 shadow-soft hover:bg-white transition-colors"
+					title="Zoom in"
+				>
+					<svg class="w-5 h-5 text-warm-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+					</svg>
+				</button>
+				<button
+					onclick={zoomOut}
+					class="bg-white/95 backdrop-blur-sm rounded-xl p-3 shadow-soft hover:bg-white transition-colors"
+					title="Zoom out"
+				>
+					<svg class="w-5 h-5 text-warm-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+					</svg>
+				</button>
 			</div>
 		</div>
 
