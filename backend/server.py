@@ -83,7 +83,7 @@ def callback():
     token = oauth.auth0.authorize_access_token()
     # Store only userinfo to keep session cookie small
     session["user"] = token.get('userinfo')
-    return redirect(FRONTEND_URL)
+    return redirect(f"{FRONTEND_URL}/makerequest")
 
 
 @app.route("/logout")
@@ -92,7 +92,7 @@ def logout():
     return redirect(
         f"https://{env.get('AUTH0_DOMAIN')}/v2/logout?" +
         urlencode({
-            "returnTo": f"{FRONTEND_URL}/makerequest",
+            "returnTo": FRONTEND_URL,
             "client_id": env.get("AUTH0_CLIENT_ID"),
         }, quote_via=quote_plus)
     )

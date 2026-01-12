@@ -247,8 +247,8 @@
 
 	<!-- Selected Request Modal -->
 	{#if selectedRequest}
-		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-			<div class="w-full max-w-lg card shadow-xl animate-in fade-in zoom-in duration-200">
+		<div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+			<div class="w-full max-w-lg card shadow-xl animate-in fade-in zoom-in duration-200 my-auto">
 				<div class="flex justify-between items-start mb-4">
 					<div>
 						<h3 class="text-xl font-bold text-warm-900">Request Details</h3>
