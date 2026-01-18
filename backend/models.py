@@ -6,7 +6,14 @@ DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///neighbourly.db')
 if DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
-engine = create_engine(DATABASE_URL)
+# Use connection pooling to avoid connection overhead on every request
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,  # Verify connections before using
+    pool_recycle=300  # Recycle connections every 5 minutes
+)
 
 __all__ = ['Base', 'Account', 'Order', 'OrderItem', 'Message', 'engine', 'DATABASE_URL']
 

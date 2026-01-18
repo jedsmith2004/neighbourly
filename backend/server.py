@@ -64,12 +64,21 @@ def get_user_email():
 def is_authorized():
     if 'user' not in session:
         return False
+    
+    # Check if we've already verified this user in this session
+    if session.get('user_verified'):
+        return True
+    
+    # Only hit DB once per session to verify/create user
     with Session(engine) as db:
         email = get_user_email()
         user = db.query(Account).filter_by(email=email).first()
         if not user:
             db.add(Account(email=email))
             db.commit()
+    
+    # Cache that we've verified this user
+    session['user_verified'] = True
     return True
 
 
@@ -86,8 +95,6 @@ def health_check():
 @app.route("/login")
 def login():
     callback_url = f"{BACKEND_URL}/callback"
-    print(f"DEBUG: Callback URL being used: '{callback_url}'")
-    print(f"DEBUG: BACKEND_URL value: '{BACKEND_URL}'")
     return oauth.auth0.authorize_redirect(redirect_uri=callback_url)
 
 

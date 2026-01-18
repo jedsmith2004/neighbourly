@@ -46,11 +46,14 @@
 
 	onMount(async () => {
 		try {
-			// Start loading requests and auth check in parallel
-			const [authResponse, requestsPromise] = await Promise.all([
+			// Start loading requests, auth check, and Google Maps in parallel
+			const [authResponse, requestsResponse, _] = await Promise.all([
 				fetch(`${API_URL}/check-auth`, { credentials: 'include' }),
-				fetch(`${API_URL}/orders`, { credentials: 'include' })
+				fetch(`${API_URL}/requests`, { credentials: 'include' }),
+				loader.load() // Load Google Maps in parallel
 			]);
+			
+			mapReady = true;
 			
 			if (!authResponse.ok) {
 				window.location.href = `${API_URL}/login`;
@@ -65,13 +68,20 @@
 			}
 
 			// Process requests data
-			if (requestsPromise.ok) {
-				requests = await requestsPromise.json();
+			if (requestsResponse.ok) {
+				const data = await requestsResponse.json();
+				const unfulfilledOrders = data[1] || [];
+				requests = unfulfilledOrders.filter(order => !order.error).map(order => ({
+					id: order.order_id,
+					message: order.message,
+					lat: parseFloat(order.lat),
+					lng: parseFloat(order.lng),
+					address: order.address,
+					collectionTime: order.time,
+					collectionDate: order.date,
+					items: order.items || []
+				}));
 			}
-
-			// Pre-load Google Maps API
-			await loader.load();
-			mapReady = true;
 			
 			// Try to get user's location
 			if (navigator.geolocation) {
