@@ -15,9 +15,11 @@
 
 	onMount(async () => {
 		try {
-			const authResponse = await fetch(`${API_URL}/check-auth`, {
-				credentials: 'include'
-			});
+			// Run auth check and commitments fetch in parallel
+			const [authResponse, commitmentsResponse] = await Promise.all([
+				fetch(`${API_URL}/check-auth`, { credentials: 'include' }),
+				fetch(`${API_URL}/my-commitments`, { credentials: 'include' })
+			]);
 			
 			if (!authResponse.ok) {
 				window.location.href = `${API_URL}/login`;
@@ -37,8 +39,10 @@
 				picture: authData.picture || ''
 			};
 
-			// Fetch my commitments
-			await loadCommitments();
+			// Process commitments from parallel fetch
+			if (commitmentsResponse.ok) {
+				commitments = await commitmentsResponse.json();
+			}
 		} catch (error) {
 			console.error('Error checking auth:', error);
 			window.location.href = `${API_URL}/login`;

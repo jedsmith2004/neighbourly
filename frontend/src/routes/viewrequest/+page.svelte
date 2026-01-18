@@ -25,46 +25,31 @@
 
 	onMount(async () => {
 		try {
-			const authResponse = await fetch(`${API_URL}/check-auth`, {
-				credentials: 'include'
-			});
+			// Run all initial fetches in parallel
+			const [authResponse, orderCheckResponse, orderDataResponse] = await Promise.all([
+				fetch(`${API_URL}/check-auth`, { credentials: 'include' }),
+				fetch(`${API_URL}/check-order`, { credentials: 'include' }),
+				fetch(`${API_URL}/deliver-personal-order`, { credentials: 'include' })
+			]);
+
 			const authData = await authResponse.json();
 			if (!authData.authenticated) {
 				window.location.href = `${API_URL}/login`;
 				return;
 			}
-		} catch (error) {
-			console.error('Error checking auth:', error);
-			window.location.href = '/';
-			return;
-		}
 
-		try {
-			const response = await fetch(`${API_URL}/check-order`, {
-				credentials: 'include'
-			});
-			if (response.ok) {
-				const data = await response.json();
-				if (!data.exists) {
+			if (orderCheckResponse.ok) {
+				const checkData = await orderCheckResponse.json();
+				if (!checkData.exists) {
 					window.location.href = '/makerequest';
 					return;
 				}
-			} else {
-				console.error('Failed to check order existence');
 			}
-		} catch (error) {
-			console.error('Error checking order:', error);
-		}
 
-		// Fetch user's order
-		try {
-			const response = await fetch(`${API_URL}/deliver-personal-order`, {
-				credentials: 'include'
-			});
-			if (!response.ok) {
+			if (!orderDataResponse.ok) {
 				throw new Error('Failed to fetch orders');
 			}
-			const orders = await response.json();
+			const orders = await orderDataResponse.json();
 
 			if (orders.length > 0 && !orders[0].error) {
 				order = {

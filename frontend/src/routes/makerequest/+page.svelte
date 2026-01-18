@@ -15,39 +15,31 @@
 
 	onMount(async () => {
 		try {
-			const authResponse = await fetch(`${API_URL}/check-auth`, {
-				credentials: 'include'
-			});
+			// Run auth check, order check, and Google Maps loading in parallel
+			const [authResponse, orderResponse] = await Promise.all([
+				fetch(`${API_URL}/check-auth`, { credentials: 'include' }),
+				fetch(`${API_URL}/check-order`, { credentials: 'include' }),
+				loadGoogleMaps() // Load maps in parallel too
+			]);
+
 			const authData = await authResponse.json();
 			if (!authData.authenticated) {
 				window.location.href = `${API_URL}/login`;
 				return;
 			}
+
+			if (orderResponse.ok) {
+				const data = await orderResponse.json();
+				if (data.exists) {
+					window.location.href = '/viewrequest';
+					return;
+				}
+			}
 		} catch (error) {
-			console.error('Error checking auth:', error);
+			console.error('Error during initialization:', error);
 			window.location.href = '/';
 			return;
 		}
-
-		try {
-			const response = await fetch(`${API_URL}/check-order`, {
-				credentials: 'include'
-			});
-			if (response.ok) {
-				const data = await response.json();
-				if (data.exists) {
-					window.location.href = '/viewrequest'; // Redirect to viewrequest
-					return;
-				}
-			} else {
-				console.error('Failed to check order existence');
-			}
-		} catch (error) {
-			console.error('Error checking order:', error);
-		}
-
-		// Pre-load Google Maps API
-		await loadGoogleMaps();
 		
 		isLoading = false;
 		

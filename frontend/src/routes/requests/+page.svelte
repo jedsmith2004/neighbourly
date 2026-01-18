@@ -46,9 +46,11 @@
 
 	onMount(async () => {
 		try {
-			const authResponse = await fetch(`${API_URL}/check-auth`, {
-				credentials: 'include'
-			});
+			// Start loading requests and auth check in parallel
+			const [authResponse, requestsPromise] = await Promise.all([
+				fetch(`${API_URL}/check-auth`, { credentials: 'include' }),
+				fetch(`${API_URL}/orders`, { credentials: 'include' })
+			]);
 			
 			if (!authResponse.ok) {
 				window.location.href = `${API_URL}/login`;
@@ -62,8 +64,10 @@
 				return;
 			}
 
-			// Fetch all requests
-			await loadRequests();
+			// Process requests data
+			if (requestsPromise.ok) {
+				requests = await requestsPromise.json();
+			}
 
 			// Pre-load Google Maps API
 			await loader.load();

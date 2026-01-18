@@ -86,6 +86,8 @@ def health_check():
 @app.route("/login")
 def login():
     callback_url = f"{BACKEND_URL}/callback"
+    print(f"DEBUG: Callback URL being used: '{callback_url}'")
+    print(f"DEBUG: BACKEND_URL value: '{BACKEND_URL}'")
     return oauth.auth0.authorize_redirect(redirect_uri=callback_url)
 
 
