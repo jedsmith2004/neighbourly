@@ -7,6 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8080
+# Railway injects PORT env variable
+ENV PORT=8080
+EXPOSE $PORT
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "server:app"]
+CMD gunicorn --bind 0.0.0.0:$PORT server:app
