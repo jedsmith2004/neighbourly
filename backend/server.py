@@ -71,6 +71,12 @@ def is_authorized():
 BACKEND_URL = env.get("BACKEND_URL", "http://localhost:3000")
 
 
+# Health check route
+@app.route("/")
+def health_check():
+    return jsonify({"status": "healthy"}), 200
+
+
 # Auth routes
 @app.route("/login")
 def login():
