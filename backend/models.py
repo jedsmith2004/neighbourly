@@ -8,6 +8,8 @@ if DATABASE_URL.startswith('postgres://'):
 
 engine = create_engine(DATABASE_URL)
 
+__all__ = ['Base', 'Account', 'Order', 'OrderItem', 'Message', 'engine', 'DATABASE_URL']
+
 
 class Base(DeclarativeBase):
     pass

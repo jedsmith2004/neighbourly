@@ -9,7 +9,7 @@ from flask_session import Session as FlaskSession
 from authlib.integrations.flask_client import OAuth
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy.orm import Session
-from models import Order, OrderItem, Account, Message, engine
+from models import Order, OrderItem, Account, Message, engine, DATABASE_URL
 
 ENV_FILE = find_dotenv()
 if ENV_FILE:
@@ -22,12 +22,17 @@ app.secret_key = env.get("APP_SECRET_KEY")
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-# Use database sessions (shared across all Fly.io machines)
+# Use database sessions (shared across all instances)
 app.config['SESSION_TYPE'] = 'sqlalchemy'
-app.config['SESSION_SQLALCHEMY'] = None  # Will use SQLALCHEMY_DATABASE_URI
-app.config['SQLALCHEMY_DATABASE_URI'] = env.get("DATABASE_URL", "sqlite:///database.db").replace("postgres://", "postgresql://")
+app.config['SESSION_SQLALCHEMY_TABLE'] = 'sessions'
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['SESSION_COOKIE_SECURE'] = True  # Required for SameSite=None
+
+# Import Flask-SQLAlchemy and configure session to use it
+from flask_sqlalchemy import SQLAlchemy
+db = SQLAlchemy(app)
+app.config['SESSION_SQLALCHEMY'] = db
 FlaskSession(app)
 
 FRONTEND_URL = env.get("FRONTEND_URL", "http://localhost:5173")
